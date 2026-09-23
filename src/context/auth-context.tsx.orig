@@ -253,29 +253,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     () => ({
       beginEnrollment,
       confirmEnrollment,
-      disableBiometrics,
-      enableBiometrics,
       isAuthenticated,
-      isBiometricEnabled,
       isPinConfigured,
       lock,
       pinProtection,
       unlock,
-      unlockWithBiometrics,
     }),
-    [
-      beginEnrollment,
-      confirmEnrollment,
-      disableBiometrics,
-      enableBiometrics,
-      isAuthenticated,
-      isBiometricEnabled,
-      isPinConfigured,
-      lock,
-      pinProtection,
-      unlock,
-      unlockWithBiometrics,
-    ],
+    [beginEnrollment, confirmEnrollment, isAuthenticated, isPinConfigured, lock, pinProtection, unlock],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
