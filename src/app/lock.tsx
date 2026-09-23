@@ -6,6 +6,10 @@ import { PinIndicator } from '@/components/pin-indicator';
 import { PinKeypad } from '@/components/pin-keypad';
 import { getSecureSmsColors } from '@/constants/secure-sms-theme';
 import { useAuth } from '@/context/auth-context';
+import {
+  getDurationInSeconds,
+  MAX_PIN_FAILED_ATTEMPTS,
+} from '@/security/pin-attempt-policy';
 import { PIN_LENGTH } from '@/security/pin-policy';
 
 type LockMode = 'create' | 'confirm' | 'unlock';
@@ -36,13 +40,54 @@ const screenCopy: Record<
   },
 };
 
+function useDeadlineCountdown(deadline: number | null) {
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+
+  useEffect(() => {
+    if (deadline === null) return;
+
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const updateCountdown = () => {
+      const remainingMs = Math.max(0, deadline - Date.now());
+      setRemainingSeconds(getDurationInSeconds(remainingMs));
+
+      if (remainingMs > 0) {
+        timeout = setTimeout(updateCountdown, Math.min(remainingMs, 250));
+      }
+    };
+
+    timeout = setTimeout(updateCountdown, 0);
+    return () => clearTimeout(timeout);
+  }, [deadline]);
+
+  return deadline === null ? 0 : remainingSeconds;
+}
+
+function formatCountdown(remainingSeconds: number) {
+  const normalizedSeconds = Math.max(1, remainingSeconds);
+  const minutes = Math.floor(normalizedSeconds / 60);
+  const seconds = normalizedSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatRemainingAttempts(remainingAttempts: number) {
+  const plural = remainingAttempts > 1 ? 's' : '';
+  return `${remainingAttempts} tentative${plural} restante${plural}.`;
+}
+
 export default function LockScreen() {
   const palette = getSecureSmsColors(useColorScheme());
-  const { beginEnrollment, confirmEnrollment, isPinConfigured, unlock } = useAuth();
+  const { beginEnrollment, confirmEnrollment, isPinConfigured, pinProtection, unlock } = useAuth();
   const [mode, setMode] = useState<LockMode>(isPinConfigured ? 'unlock' : 'create');
   const [entryLength, setEntryLength] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const pinEntryRef = useRef('');
+  const retryDelaySeconds = useDeadlineCountdown(pinProtection.retryAvailableAt);
+  const temporaryLockSeconds = useDeadlineCountdown(pinProtection.temporarilyLockedUntil);
+  const isTemporarilyLocked = pinProtection.temporarilyLockedUntil !== null;
+  const isRetryDelayed = !isTemporarilyLocked && pinProtection.retryAvailableAt !== null;
+  const isInputBlocked = isTemporarilyLocked || isRetryDelayed;
 
   const clearEntry = useCallback(() => {
     pinEntryRef.current = '';
@@ -58,6 +103,8 @@ export default function LockScreen() {
 
   const submitPin = useCallback(
     (pin: string) => {
+      if (isInputBlocked) return;
+
       clearEntry();
       setFeedback(null);
 
@@ -94,15 +141,27 @@ export default function LockScreen() {
         return;
       }
 
-      if (unlock(pin).status === 'rejected') {
-        setFeedback({ text: 'PIN incorrect. Réessayez.', tone: 'error' });
+      const result = unlock(pin);
+
+      if (result.status === 'rejected') {
+        setFeedback({
+          text: `PIN incorrect. ${formatRemainingAttempts(result.remainingAttempts)}`,
+          tone: 'error',
+        });
+        return;
+      }
+
+      if (result.status === 'invalid-pin') {
+        setFeedback({ text: `Saisissez exactement ${PIN_LENGTH} chiffres.`, tone: 'error' });
       }
     },
-    [beginEnrollment, clearEntry, confirmEnrollment, mode, unlock],
+    [beginEnrollment, clearEntry, confirmEnrollment, isInputBlocked, mode, unlock],
   );
 
   const handleDigit = useCallback(
     (digit: string) => {
+      if (isInputBlocked) return;
+
       const nextPin = `${pinEntryRef.current}${digit}`;
 
       if (nextPin.length > PIN_LENGTH) return;
@@ -115,14 +174,16 @@ export default function LockScreen() {
         submitPin(nextPin);
       }
     },
-    [submitPin],
+    [isInputBlocked, submitPin],
   );
 
   const handleDelete = useCallback(() => {
+    if (isInputBlocked) return;
+
     pinEntryRef.current = pinEntryRef.current.slice(0, -1);
     setEntryLength(pinEntryRef.current.length);
     setFeedback(null);
-  }, []);
+  }, [isInputBlocked]);
 
   const copy = screenCopy[mode];
 
@@ -138,13 +199,31 @@ export default function LockScreen() {
 
         <View style={styles.indicatorBlock}>
           <PinIndicator length={entryLength} />
-          <Text style={[styles.indicatorHint, { color: palette.textMuted }]}>
-            {PIN_LENGTH} chiffres requis
-          </Text>
+          {isInputBlocked ? (
+            <View
+              accessibilityLiveRegion="polite"
+              style={[
+                styles.blockingStatus,
+                { backgroundColor: palette.primarySoft, borderColor: palette.border },
+              ]}>
+              <Text style={[styles.blockingTitle, { color: palette.text }]}>
+                {isTemporarilyLocked ? 'Verrouillage temporaire' : 'Temporisation active'}
+              </Text>
+              <Text style={[styles.blockingText, { color: palette.textMuted }]}>
+                {isTemporarilyLocked
+                  ? `Trop de PIN incorrects. Réessayez dans ${formatCountdown(temporaryLockSeconds)}.`
+                  : `Échec ${pinProtection.failedAttempts} sur ${MAX_PIN_FAILED_ATTEMPTS}. Prochain essai dans ${formatCountdown(retryDelaySeconds)}.`}
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.indicatorHint, { color: palette.textMuted }]}>
+              {PIN_LENGTH} chiffres · {MAX_PIN_FAILED_ATTEMPTS} essais avant verrouillage
+            </Text>
+          )}
         </View>
 
         <View accessibilityLiveRegion="polite" style={styles.feedbackSlot}>
-          {feedback ? (
+          {!isInputBlocked && feedback ? (
             <Text
               style={[
                 styles.feedback,
@@ -157,10 +236,11 @@ export default function LockScreen() {
       </View>
 
       <View style={styles.bottomContent}>
-        <PinKeypad onDelete={handleDelete} onDigit={handleDigit} />
+        <PinKeypad disabled={isInputBlocked} onDelete={handleDelete} onDigit={handleDigit} />
         <View style={[styles.notice, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[styles.noticeText, { color: palette.textMuted }]}>
-            Ce PIN reste uniquement en mémoire pour cette phase et sera effacé à la fermeture de l’application.
+            Le PIN, le compteur d’échecs et les délais restent uniquement en mémoire pour cette phase ; ils
+            sont effacés à la fermeture de l’application.
           </Text>
         </View>
       </View>
@@ -209,6 +289,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 13,
+  },
+  blockingStatus: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 13,
+    maxWidth: 330,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  blockingTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  blockingText: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    textAlign: 'center',
   },
   feedbackSlot: {
     alignItems: 'center',

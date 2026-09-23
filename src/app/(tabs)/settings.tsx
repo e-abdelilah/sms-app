@@ -3,6 +3,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSecureSmsColors } from '@/constants/secure-sms-theme';
 import { useAuth } from '@/context/auth-context';
+import {
+  getDurationInSeconds,
+  MAX_PIN_FAILED_ATTEMPTS,
+  PIN_RETRY_DELAY_MS,
+  TEMPORARY_PIN_LOCK_MS,
+} from '@/security/pin-attempt-policy';
 
 type SettingRowProps = {
   detail: string;
@@ -27,6 +33,8 @@ function SettingRow({ detail, label, value }: SettingRowProps) {
 export default function SettingsScreen() {
   const palette = getSecureSmsColors(useColorScheme());
   const { lock } = useAuth();
+  const retryDelaySeconds = getDurationInSeconds(PIN_RETRY_DELAY_MS);
+  const temporaryLockSeconds = getDurationInSeconds(TEMPORARY_PIN_LOCK_MS);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -50,10 +58,11 @@ export default function SettingsScreen() {
 
         <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>SÉCURITÉ</Text>
         <View style={[styles.securityCard, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}>
-          <Text style={[styles.securityTitle, { color: palette.text }]}>Verrouillage PIN actif</Text>
+          <Text style={[styles.securityTitle, { color: palette.text }]}>PIN et anti-brute-force actifs</Text>
           <Text style={[styles.securityText, { color: palette.textMuted }]}>
-            Le PIN protège l’accès à cette session de démonstration. Sa persistance sécurisée sera ajoutée
-            dans une phase ultérieure.
+            Après chaque PIN incorrect, un délai de {retryDelaySeconds} seconde est appliqué. Au{' '}
+            {MAX_PIN_FAILED_ATTEMPTS}e échec, l’accès est verrouillé pendant {temporaryLockSeconds} secondes.
+            Le compteur reste en mémoire pour cette phase.
           </Text>
           <Pressable
             accessibilityLabel="Verrouiller l’application"
@@ -69,8 +78,8 @@ export default function SettingsScreen() {
         <View style={[styles.pendingCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[styles.pendingTitle, { color: palette.text }]}>Protections à venir</Text>
           <Text style={[styles.pendingText, { color: palette.textMuted }]}>
-            Biométrie, chiffrement, contrôles d’intégrité et limitation des tentatives seront ajoutés dans
-            leurs phases dédiées.
+            Biométrie, verrouillage automatique, chiffrement et contrôles d’intégrité seront ajoutés dans leurs
+            phases dédiées.
           </Text>
         </View>
       </ScrollView>

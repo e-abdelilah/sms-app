@@ -1,5 +1,20 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react';
 
+import {
+  getAttemptsRemaining,
+  MAX_PIN_FAILED_ATTEMPTS,
+  PIN_RETRY_DELAY_MS,
+  TEMPORARY_PIN_LOCK_MS,
+} from '@/security/pin-attempt-policy';
 import { isValidPin } from '@/security/pin-policy';
 
 type BeginEnrollmentResult =
@@ -11,7 +26,27 @@ type ConfirmEnrollmentResult =
   | { status: 'invalid-pin' }
   | { status: 'mismatch' };
 
-type UnlockResult = { status: 'accepted' } | { status: 'rejected' };
+type UnlockResult =
+  | { status: 'accepted' }
+  | { status: 'invalid-pin' }
+  | { retryAvailableAt: number; status: 'retry-delayed' }
+  | {
+      failedAttempts: number;
+      remainingAttempts: number;
+      retryAvailableAt: number;
+      status: 'rejected';
+    }
+  | {
+      failedAttempts: number;
+      status: 'temporarily-locked';
+      temporarilyLockedUntil: number;
+    };
+
+export type PinProtectionState = {
+  failedAttempts: number;
+  retryAvailableAt: number | null;
+  temporarilyLockedUntil: number | null;
+};
 
 type AuthContextValue = {
   beginEnrollment: (pin: string) => BeginEnrollmentResult;
@@ -19,17 +54,73 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isPinConfigured: boolean;
   lock: () => void;
+  pinProtection: PinProtectionState;
   unlock: (pin: string) => UnlockResult;
+};
+
+const initialPinProtection: PinProtectionState = {
+  failedAttempts: 0,
+  retryAvailableAt: null,
+  temporarilyLockedUntil: null,
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  // This deliberately stays in memory for Phase 2. It is never rendered, logged, or exposed by the context.
+  // The PIN and limiter are intentionally memory-only until the secure-storage phases.
   const configuredPinRef = useRef<string | null>(null);
   const pendingPinRef = useRef<string | null>(null);
+  const failedAttemptsRef = useRef(0);
+  const retryAvailableAtRef = useRef<number | null>(null);
+  const temporarilyLockedUntilRef = useRef<number | null>(null);
   const [isPinConfigured, setIsPinConfigured] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pinProtection, setPinProtection] = useState<PinProtectionState>(initialPinProtection);
+
+  const publishPinProtection = useCallback(() => {
+    setPinProtection({
+      failedAttempts: failedAttemptsRef.current,
+      retryAvailableAt: retryAvailableAtRef.current,
+      temporarilyLockedUntil: temporarilyLockedUntilRef.current,
+    });
+  }, []);
+
+  const resetPinProtection = useCallback(() => {
+    failedAttemptsRef.current = 0;
+    retryAvailableAtRef.current = null;
+    temporarilyLockedUntilRef.current = null;
+    publishPinProtection();
+  }, [publishPinProtection]);
+
+  const expirePinProtection = useCallback(
+    (now = Date.now()) => {
+      const temporarilyLockedUntil = temporarilyLockedUntilRef.current;
+
+      if (temporarilyLockedUntil !== null && now >= temporarilyLockedUntil) {
+        resetPinProtection();
+        return;
+      }
+
+      const retryAvailableAt = retryAvailableAtRef.current;
+      if (retryAvailableAt !== null && now >= retryAvailableAt) {
+        retryAvailableAtRef.current = null;
+        publishPinProtection();
+      }
+    },
+    [publishPinProtection, resetPinProtection],
+  );
+
+  useEffect(() => {
+    const nextDeadline = pinProtection.temporarilyLockedUntil ?? pinProtection.retryAvailableAt;
+    if (nextDeadline === null) return;
+
+    const timeout = setTimeout(
+      () => expirePinProtection(),
+      Math.max(0, nextDeadline - Date.now()) + 10,
+    );
+
+    return () => clearTimeout(timeout);
+  }, [expirePinProtection, pinProtection.retryAvailableAt, pinProtection.temporarilyLockedUntil]);
 
   const beginEnrollment = useCallback((pin: string): BeginEnrollmentResult => {
     if (!isValidPin(pin)) return { status: 'invalid-pin' };
@@ -38,34 +129,86 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return { status: 'ready-to-confirm' };
   }, []);
 
-  const confirmEnrollment = useCallback((pin: string): ConfirmEnrollmentResult => {
-    const pendingPin = pendingPinRef.current;
+  const confirmEnrollment = useCallback(
+    (pin: string): ConfirmEnrollmentResult => {
+      const pendingPin = pendingPinRef.current;
 
-    if (!pendingPin || !isValidPin(pin)) {
+      if (!pendingPin || !isValidPin(pin)) {
+        pendingPinRef.current = null;
+        return { status: 'invalid-pin' };
+      }
+
+      if (pin !== pendingPin) {
+        pendingPinRef.current = null;
+        return { status: 'mismatch' };
+      }
+
+      configuredPinRef.current = pin;
       pendingPinRef.current = null;
-      return { status: 'invalid-pin' };
-    }
+      resetPinProtection();
+      setIsPinConfigured(true);
+      setIsAuthenticated(false);
+      return { status: 'configured' };
+    },
+    [resetPinProtection],
+  );
 
-    if (pin !== pendingPin) {
-      pendingPinRef.current = null;
-      return { status: 'mismatch' };
-    }
+  const unlock = useCallback(
+    (pin: string): UnlockResult => {
+      const now = Date.now();
+      expirePinProtection(now);
 
-    configuredPinRef.current = pin;
-    pendingPinRef.current = null;
-    setIsPinConfigured(true);
-    setIsAuthenticated(false);
-    return { status: 'configured' };
-  }, []);
+      const temporarilyLockedUntil = temporarilyLockedUntilRef.current;
+      if (temporarilyLockedUntil !== null && now < temporarilyLockedUntil) {
+        return {
+          failedAttempts: failedAttemptsRef.current,
+          status: 'temporarily-locked',
+          temporarilyLockedUntil,
+        };
+      }
 
-  const unlock = useCallback((pin: string): UnlockResult => {
-    if (!isValidPin(pin) || configuredPinRef.current === null || pin !== configuredPinRef.current) {
-      return { status: 'rejected' };
-    }
+      const retryAvailableAt = retryAvailableAtRef.current;
+      if (retryAvailableAt !== null && now < retryAvailableAt) {
+        return { retryAvailableAt, status: 'retry-delayed' };
+      }
 
-    setIsAuthenticated(true);
-    return { status: 'accepted' };
-  }, []);
+      if (!isValidPin(pin) || configuredPinRef.current === null) {
+        return { status: 'invalid-pin' };
+      }
+
+      if (pin === configuredPinRef.current) {
+        resetPinProtection();
+        setIsAuthenticated(true);
+        return { status: 'accepted' };
+      }
+
+      const failedAttempts = failedAttemptsRef.current + 1;
+      failedAttemptsRef.current = failedAttempts;
+
+      if (failedAttempts >= MAX_PIN_FAILED_ATTEMPTS) {
+        const newTemporaryLockUntil = now + TEMPORARY_PIN_LOCK_MS;
+        retryAvailableAtRef.current = null;
+        temporarilyLockedUntilRef.current = newTemporaryLockUntil;
+        publishPinProtection();
+        return {
+          failedAttempts,
+          status: 'temporarily-locked',
+          temporarilyLockedUntil: newTemporaryLockUntil,
+        };
+      }
+
+      const newRetryAvailableAt = now + PIN_RETRY_DELAY_MS;
+      retryAvailableAtRef.current = newRetryAvailableAt;
+      publishPinProtection();
+      return {
+        failedAttempts,
+        remainingAttempts: getAttemptsRemaining(failedAttempts),
+        retryAvailableAt: newRetryAvailableAt,
+        status: 'rejected',
+      };
+    },
+    [expirePinProtection, publishPinProtection, resetPinProtection],
+  );
 
   const lock = useCallback(() => setIsAuthenticated(false), []);
 
@@ -76,9 +219,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isAuthenticated,
       isPinConfigured,
       lock,
+      pinProtection,
       unlock,
     }),
-    [beginEnrollment, confirmEnrollment, isAuthenticated, isPinConfigured, lock, unlock],
+    [beginEnrollment, confirmEnrollment, isAuthenticated, isPinConfigured, lock, pinProtection, unlock],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
