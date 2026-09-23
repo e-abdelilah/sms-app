@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PinReauthenticationModal } from '@/components/pin-reauthentication-modal';
 import { getSecureSmsColors } from '@/constants/secure-sms-theme';
 import { useAuth } from '@/context/auth-context';
 import {
@@ -9,6 +11,13 @@ import {
   PIN_RETRY_DELAY_MS,
   TEMPORARY_PIN_LOCK_MS,
 } from '@/security/pin-attempt-policy';
+import {
+  BACKGROUND_LOCK_DELAY_MS,
+  getDurationInMinutes,
+  getDurationInSeconds as getSessionDurationInSeconds,
+  SESSION_INACTIVITY_TIMEOUT_MS,
+  SESSION_MAX_DURATION_MS,
+} from '@/security/session-policy';
 
 type SettingRowProps = {
   detail: string;
@@ -32,9 +41,60 @@ function SettingRow({ detail, label, value }: SettingRowProps) {
 
 export default function SettingsScreen() {
   const palette = getSecureSmsColors(useColorScheme());
-  const { lock } = useAuth();
+  const { disableBiometrics, enableBiometrics, isBiometricEnabled, lock, sessionExpiresAt } = useAuth();
+  const [biometricMessage, setBiometricMessage] = useState<string | null>(null);
+  const [isBiometricWorking, setIsBiometricWorking] = useState(false);
+  const [pendingBiometricAction, setPendingBiometricAction] = useState<'enable' | 'disable' | null>(null);
   const retryDelaySeconds = getDurationInSeconds(PIN_RETRY_DELAY_MS);
   const temporaryLockSeconds = getDurationInSeconds(TEMPORARY_PIN_LOCK_MS);
+  const sessionMinutes = getDurationInMinutes(SESSION_MAX_DURATION_MS);
+  const inactivityMinutes = getDurationInMinutes(SESSION_INACTIVITY_TIMEOUT_MS);
+  const backgroundSeconds = getSessionDurationInSeconds(BACKGROUND_LOCK_DELAY_MS);
+  const sessionEndTime = sessionExpiresAt
+    ? new Date(sessionExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'Verrouillée';
+
+  function handleBiometricPress() {
+    setBiometricMessage(null);
+    setPendingBiometricAction(isBiometricEnabled ? 'disable' : 'enable');
+  }
+
+  async function handleBiometricReauthenticated() {
+    const action = pendingBiometricAction;
+    setPendingBiometricAction(null);
+
+    if (!action) return;
+
+    if (action === 'disable') {
+      disableBiometrics();
+      setBiometricMessage('Biométrie désactivée pour cette session.');
+      return;
+    }
+
+    setIsBiometricWorking(true);
+    const result = await enableBiometrics();
+    setIsBiometricWorking(false);
+
+    switch (result.status) {
+      case 'authenticated':
+        setBiometricMessage('Biométrie forte activée pour cette session.');
+        return;
+      case 'cancelled':
+        setBiometricMessage('Activation biométrique annulée.');
+        return;
+      case 'locked-out':
+        setBiometricMessage('Biométrie temporairement verrouillée par Android.');
+        return;
+      case 'not-enrolled':
+        setBiometricMessage('Enregistrez d’abord une biométrie forte dans Android.');
+        return;
+      case 'unavailable':
+        setBiometricMessage('Biométrie forte indisponible sur cet appareil.');
+        return;
+      default:
+        setBiometricMessage('Échec de l’authentification biométrique.');
+    }
+  }
 
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -75,14 +135,60 @@ export default function SettingsScreen() {
             <Text style={[styles.lockButtonText, { color: palette.sentBubbleText }]}>Verrouiller l’application</Text>
           </Pressable>
         </View>
+        <View style={[styles.biometricCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <Text style={[styles.securityTitle, { color: palette.text }]}>Session locale protégée</Text>
+          <Text style={[styles.securityText, { color: palette.textMuted }]}>
+            Expiration absolue : {sessionMinutes} min · Inactivité : {inactivityMinutes} min · Arrière-plan :{' '}
+            {backgroundSeconds} s.
+          </Text>
+          <Text style={[styles.sessionStatus, { color: palette.primary }]}>Expiration prévue : {sessionEndTime}</Text>
+        </View>
+        <View style={[styles.biometricCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <Text style={[styles.securityTitle, { color: palette.text }]}>Biométrie Android forte</Text>
+          <Text style={[styles.securityText, { color: palette.textMuted }]}>
+            {isBiometricEnabled
+              ? 'Activée comme méthode de déverrouillage pour cette session.'
+              : 'Désactivée. Activez-la après avoir confirmé votre identité.'}
+          </Text>
+          {biometricMessage ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[styles.biometricMessage, { color: palette.textMuted }]}>
+              {biometricMessage}
+            </Text>
+          ) : null}
+          <Pressable
+            accessibilityLabel={isBiometricEnabled ? 'Désactiver la biométrie' : 'Activer la biométrie'}
+            accessibilityRole="button"
+            disabled={isBiometricWorking}
+            onPress={() => void handleBiometricPress()}
+            style={({ pressed }) => [
+              styles.lockButton,
+              { backgroundColor: pressed ? palette.primaryPressed : palette.primary },
+              isBiometricWorking && styles.actionDisabled,
+            ]}>
+            <Text style={[styles.lockButtonText, { color: palette.sentBubbleText }]}>
+              {isBiometricWorking
+                ? 'Vérification…'
+                : isBiometricEnabled
+                  ? 'Désactiver la biométrie'
+                  : 'Activer la biométrie'}
+            </Text>
+          </Pressable>
+        </View>
         <View style={[styles.pendingCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[styles.pendingTitle, { color: palette.text }]}>Protections à venir</Text>
           <Text style={[styles.pendingText, { color: palette.textMuted }]}>
-            Biométrie, verrouillage automatique, chiffrement et contrôles d’intégrité seront ajoutés dans leurs
-            phases dédiées.
+            Chiffrement, stockage sécurisé et contrôles d’intégrité seront ajoutés dans leurs phases dédiées.
           </Text>
         </View>
       </ScrollView>
+      <PinReauthenticationModal
+        actionLabel={pendingBiometricAction === 'disable' ? 'désactiver la biométrie' : 'activer la biométrie'}
+        onAuthenticated={() => void handleBiometricReauthenticated()}
+        onCancel={() => setPendingBiometricAction(null)}
+        visible={pendingBiometricAction !== null}
+      />
     </SafeAreaView>
   );
 }
@@ -153,6 +259,23 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     padding: 16,
   },
+  biometricCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginHorizontal: 20,
+    marginTop: 12,
+    padding: 16,
+  },
+  biometricMessage: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
+  },
+  sessionStatus: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 10,
+  },
   securityTitle: {
     fontSize: 15,
     fontWeight: '800',
@@ -169,6 +292,9 @@ const styles = StyleSheet.create({
     minHeight: 45,
     justifyContent: 'center',
     paddingHorizontal: 14,
+  },
+  actionDisabled: {
+    opacity: 0.55,
   },
   lockButtonText: {
     fontSize: 14,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PinIndicator } from '@/components/pin-indicator';
@@ -78,16 +78,26 @@ function formatRemainingAttempts(remainingAttempts: number) {
 
 export default function LockScreen() {
   const palette = getSecureSmsColors(useColorScheme());
-  const { beginEnrollment, confirmEnrollment, isPinConfigured, pinProtection, unlock } = useAuth();
+  const {
+    beginEnrollment,
+    confirmEnrollment,
+    isBiometricEnabled,
+    isPinConfigured,
+    pinProtection,
+    unlock,
+    unlockWithBiometrics,
+  } = useAuth();
   const [mode, setMode] = useState<LockMode>(isPinConfigured ? 'unlock' : 'create');
   const [entryLength, setEntryLength] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [isBiometricAuthenticating, setIsBiometricAuthenticating] = useState(false);
   const pinEntryRef = useRef('');
   const retryDelaySeconds = useDeadlineCountdown(pinProtection.retryAvailableAt);
   const temporaryLockSeconds = useDeadlineCountdown(pinProtection.temporarilyLockedUntil);
   const isTemporarilyLocked = pinProtection.temporarilyLockedUntil !== null;
   const isRetryDelayed = !isTemporarilyLocked && pinProtection.retryAvailableAt !== null;
-  const isInputBlocked = isTemporarilyLocked || isRetryDelayed;
+  const isPinThrottled = isTemporarilyLocked || isRetryDelayed;
+  const isInputBlocked = isPinThrottled || isBiometricAuthenticating;
 
   const clearEntry = useCallback(() => {
     pinEntryRef.current = '';
@@ -185,10 +195,50 @@ export default function LockScreen() {
     setFeedback(null);
   }, [isInputBlocked]);
 
+  const handleBiometricUnlock = useCallback(async () => {
+    if (isBiometricAuthenticating) return;
+
+    clearEntry();
+    setFeedback(null);
+    setIsBiometricAuthenticating(true);
+
+    const result = await unlockWithBiometrics();
+    setIsBiometricAuthenticating(false);
+
+    if (result.status === 'authenticated') return;
+
+    switch (result.status) {
+      case 'cancelled':
+        setFeedback({
+          text: 'Authentification biométrique annulée.',
+          tone: 'error',
+        });
+        return;
+      case 'locked-out':
+        setFeedback({
+          text: 'Biométrie verrouillée par Android. Utilisez votre PIN.',
+          tone: 'error',
+        });
+        return;
+      case 'not-enrolled':
+        setFeedback({
+          text: 'Aucune biométrie forte n’est enregistrée. Utilisez votre PIN.',
+          tone: 'error',
+        });
+        return;
+      default:
+        setFeedback({
+          text: 'Biométrie indisponible. Utilisez votre PIN.',
+          tone: 'error',
+        });
+    }
+  }, [clearEntry, isBiometricAuthenticating, unlockWithBiometrics]);
+
   const copy = screenCopy[mode];
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.screen, { backgroundColor: palette.background }]}>
+      <ScrollView bounces={false} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         <View style={[styles.badge, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}>
           <Text style={[styles.badgeText, { color: palette.primary }]}>{copy.stage}</Text>
@@ -199,7 +249,7 @@ export default function LockScreen() {
 
         <View style={styles.indicatorBlock}>
           <PinIndicator length={entryLength} />
-          {isInputBlocked ? (
+          {isPinThrottled ? (
             <View
               accessibilityLiveRegion="polite"
               style={[
@@ -223,7 +273,7 @@ export default function LockScreen() {
         </View>
 
         <View accessibilityLiveRegion="polite" style={styles.feedbackSlot}>
-          {!isInputBlocked && feedback ? (
+          {!isBiometricAuthenticating && feedback ? (
             <Text
               style={[
                 styles.feedback,
@@ -237,13 +287,30 @@ export default function LockScreen() {
 
       <View style={styles.bottomContent}>
         <PinKeypad disabled={isInputBlocked} onDelete={handleDelete} onDigit={handleDigit} />
+        {mode === 'unlock' && isBiometricEnabled ? (
+          <Pressable
+            accessibilityLabel="Utiliser la biométrie"
+            accessibilityRole="button"
+            disabled={isBiometricAuthenticating}
+            onPress={() => void handleBiometricUnlock()}
+            style={({ pressed }) => [
+              styles.biometricButton,
+              { backgroundColor: pressed ? palette.surfaceMuted : palette.surface, borderColor: palette.primary },
+              isBiometricAuthenticating && styles.biometricButtonDisabled,
+            ]}>
+            <Text style={[styles.biometricButtonText, { color: palette.primary }]}>
+              {isBiometricAuthenticating ? 'Vérification…' : 'Utiliser la biométrie'}
+            </Text>
+          </Pressable>
+        ) : null}
         <View style={[styles.notice, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[styles.noticeText, { color: palette.textMuted }]}>
-            Le PIN, le compteur d’échecs et les délais restent uniquement en mémoire pour cette phase ; ils
-            sont effacés à la fermeture de l’application.
+            Le PIN, l’activation biométrique et le compteur restent en mémoire pour cette phase ; ils sont
+            effacés à la fermeture de l’application.
           </Text>
         </View>
       </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -251,6 +318,9 @@ export default function LockScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   content: {
     flex: 1,
@@ -325,6 +395,23 @@ const styles = StyleSheet.create({
     gap: 18,
     paddingBottom: 8,
     paddingHorizontal: 24,
+  },
+  biometricButton: {
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    maxWidth: 360,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    width: '100%',
+  },
+  biometricButtonDisabled: {
+    opacity: 0.55,
+  },
+  biometricButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
   },
   notice: {
     borderRadius: 14,

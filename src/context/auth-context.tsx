@@ -20,6 +20,7 @@ import {
   TEMPORARY_PIN_LOCK_MS,
 } from '@/security/pin-attempt-policy';
 import { isValidPin } from '@/security/pin-policy';
+import { useSessionSecurity } from '@/security/use-session-security';
 
 type BeginEnrollmentResult =
   | { status: 'invalid-pin' }
@@ -64,6 +65,9 @@ type AuthContextValue = {
   isPinConfigured: boolean;
   lock: () => void;
   pinProtection: PinProtectionState;
+  reauthenticate: (pin: string) => UnlockResult;
+  recordUserActivity: () => void;
+  sessionExpiresAt: number | null;
   unlock: (pin: string) => UnlockResult;
   unlockWithBiometrics: () => Promise<BiometricUnlockResult>;
 };
@@ -84,9 +88,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const retryAvailableAtRef = useRef<number | null>(null);
   const temporarilyLockedUntilRef = useRef<number | null>(null);
   const [isPinConfigured, setIsPinConfigured] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [pinProtection, setPinProtection] = useState<PinProtectionState>(initialPinProtection);
+  const {
+    isAuthenticated,
+    lock,
+    recordUserActivity,
+    sessionExpiresAt,
+    startAuthenticatedSession,
+  } = useSessionSecurity();
 
   const publishPinProtection = useCallback(() => {
     setPinProtection({
@@ -159,10 +169,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       resetPinProtection();
       setIsBiometricEnabled(false);
       setIsPinConfigured(true);
-      setIsAuthenticated(false);
+      lock();
       return { status: 'configured' };
     },
-    [resetPinProtection],
+    [lock, resetPinProtection],
   );
 
   const unlock = useCallback(
@@ -190,7 +200,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       if (pin === configuredPinRef.current) {
         resetPinProtection();
-        setIsAuthenticated(true);
+        startAuthenticatedSession();
         return { status: 'accepted' };
       }
 
@@ -219,7 +229,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         status: 'rejected',
       };
     },
-    [expirePinProtection, publishPinProtection, resetPinProtection],
+    [expirePinProtection, publishPinProtection, resetPinProtection, startAuthenticatedSession],
   );
 
   const enableBiometrics = useCallback(async (): Promise<BiometricAuthenticationResult> => {
@@ -241,13 +251,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     if (result.status === 'authenticated') {
       resetPinProtection();
-      setIsAuthenticated(true);
+      startAuthenticatedSession();
     }
 
     return result;
-  }, [isBiometricEnabled, resetPinProtection]);
-
-  const lock = useCallback(() => setIsAuthenticated(false), []);
+  }, [isBiometricEnabled, resetPinProtection, startAuthenticatedSession]);
 
   const value = useMemo(
     () => ({
@@ -260,6 +268,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isPinConfigured,
       lock,
       pinProtection,
+      reauthenticate: unlock,
+      recordUserActivity,
+      sessionExpiresAt,
       unlock,
       unlockWithBiometrics,
     }),
@@ -273,6 +284,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isPinConfigured,
       lock,
       pinProtection,
+      recordUserActivity,
+      sessionExpiresAt,
       unlock,
       unlockWithBiometrics,
     ],
