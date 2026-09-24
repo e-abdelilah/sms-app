@@ -10,7 +10,7 @@ import { MockSmsProvider } from '@/context/mock-sms-context';
 void SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { isAuthenticated, isAuthReady, recordUserActivity } = useAuth();
+  const { isAccountConfigured, isAuthenticated, isAuthReady, recordUserActivity } = useAuth();
 
   if (!isAuthReady) {
     return <View style={styles.navigationRoot} />;
@@ -19,10 +19,13 @@ function RootNavigator() {
   return (
     <View onTouchStart={recordUserActivity} style={styles.navigationRoot}>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Protected guard={!isAuthenticated}>
+        <Stack.Protected guard={!isAccountConfigured}>
+          <Stack.Screen name="register" />
+        </Stack.Protected>
+        <Stack.Protected guard={isAccountConfigured && !isAuthenticated}>
           <Stack.Screen name="lock" />
         </Stack.Protected>
-        <Stack.Protected guard={isAuthenticated}>
+        <Stack.Protected guard={isAccountConfigured && isAuthenticated}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="chat/[conversationId]" />
           <Stack.Screen name="compose" options={{ presentation: 'modal' }} />

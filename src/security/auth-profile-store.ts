@@ -7,11 +7,21 @@ const secureStoreOptions: SecureStore.SecureStoreOptions = {
 };
 
 export type AuthProfile = {
-  biometricsEnabled: boolean;
-  pin: string;
+  account: {
+    displayName: string;
+    identifier: string;
+    provider: 'email' | 'google';
+  };
+  pin: string | null;
 };
 
 let volatileProfile: AuthProfile | null = null;
+
+export async function clearAuthProfile() {
+  volatileProfile = null;
+  if (!(await SecureStore.isAvailableAsync())) return;
+  await SecureStore.deleteItemAsync(AUTH_PROFILE_KEY, secureStoreOptions);
+}
 
 export async function loadAuthProfile(): Promise<AuthProfile | null> {
   if (!(await SecureStore.isAvailableAsync())) return volatileProfile;
@@ -21,8 +31,25 @@ export async function loadAuthProfile(): Promise<AuthProfile | null> {
 
   try {
     const profile = JSON.parse(serializedProfile) as Partial<AuthProfile>;
-    if (typeof profile.pin !== 'string' || typeof profile.biometricsEnabled !== 'boolean') return null;
-    return { biometricsEnabled: profile.biometricsEnabled, pin: profile.pin };
+    const account = profile.account;
+    if (
+      !account ||
+      typeof account.displayName !== 'string' ||
+      typeof account.identifier !== 'string' ||
+      (account.provider !== 'email' && account.provider !== 'google') ||
+      (profile.pin !== null && typeof profile.pin !== 'string')
+    ) {
+      return null;
+    }
+
+    return {
+      account: {
+        displayName: account.displayName,
+        identifier: account.identifier,
+        provider: account.provider,
+      },
+      pin: profile.pin ?? null,
+    };
   } catch {
     return null;
   }

@@ -1,5 +1,5 @@
 /**
- * Domain models used by the Phase 1 local SMS prototype.
+ * Domain models used by the SecureSMS messaging application.
  *
  * Dates are ISO-8601 UTC strings so they stay serializable when a persistence
  * layer is introduced in a later phase.
