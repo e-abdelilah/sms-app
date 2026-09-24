@@ -10,9 +10,10 @@ import {
 } from 'react';
 
 import {
-  authenticateWithStrongBiometrics,
+  authenticateWithBiometrics,
   type BiometricAuthenticationResult,
 } from '@/security/biometric-authentication';
+import { loadAuthProfile, saveAuthProfile } from '@/security/auth-profile-store';
 import {
   getAttemptsRemaining,
   MAX_PIN_FAILED_ATTEMPTS,
@@ -60,6 +61,7 @@ type AuthContextValue = {
   confirmEnrollment: (pin: string) => ConfirmEnrollmentResult;
   disableBiometrics: () => void;
   enableBiometrics: () => Promise<BiometricAuthenticationResult>;
+  isAuthReady: boolean;
   isAuthenticated: boolean;
   isBiometricEnabled: boolean;
   isPinConfigured: boolean;
@@ -81,12 +83,12 @@ const initialPinProtection: PinProtectionState = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  // The PIN and limiter are intentionally memory-only until the secure-storage phases.
   const configuredPinRef = useRef<string | null>(null);
   const pendingPinRef = useRef<string | null>(null);
   const failedAttemptsRef = useRef(0);
   const retryAvailableAtRef = useRef<number | null>(null);
   const temporarilyLockedUntilRef = useRef<number | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [isPinConfigured, setIsPinConfigured] = useState(false);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [pinProtection, setPinProtection] = useState<PinProtectionState>(initialPinProtection);
@@ -97,6 +99,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
     sessionExpiresAt,
     startAuthenticatedSession,
   } = useSessionSecurity();
+
+  useEffect(() => {
+    let active = true;
+
+    void loadAuthProfile()
+      .catch(() => null)
+      .then((profile) => {
+        if (!active || !profile || !isValidPin(profile.pin)) return;
+        configuredPinRef.current = profile.pin;
+        setIsPinConfigured(true);
+        setIsBiometricEnabled(profile.biometricsEnabled);
+      })
+      .finally(() => {
+        if (active) setIsAuthReady(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const publishPinProtection = useCallback(() => {
     setPinProtection({
@@ -169,6 +191,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       resetPinProtection();
       setIsBiometricEnabled(false);
       setIsPinConfigured(true);
+      void saveAuthProfile({ biometricsEnabled: false, pin }).catch(() => undefined);
       lock();
       return { status: 'configured' };
     },
@@ -233,21 +256,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 
   const enableBiometrics = useCallback(async (): Promise<BiometricAuthenticationResult> => {
-    const result = await authenticateWithStrongBiometrics();
+    const result = await authenticateWithBiometrics();
 
     if (result.status === 'authenticated') {
       setIsBiometricEnabled(true);
+      const pin = configuredPinRef.current;
+      if (pin) void saveAuthProfile({ biometricsEnabled: true, pin }).catch(() => undefined);
     }
 
     return result;
   }, []);
 
-  const disableBiometrics = useCallback(() => setIsBiometricEnabled(false), []);
+  const disableBiometrics = useCallback(() => {
+    setIsBiometricEnabled(false);
+    const pin = configuredPinRef.current;
+    if (pin) void saveAuthProfile({ biometricsEnabled: false, pin }).catch(() => undefined);
+  }, []);
 
   const unlockWithBiometrics = useCallback(async (): Promise<BiometricUnlockResult> => {
     if (!isBiometricEnabled) return { status: 'not-enabled' };
 
-    const result = await authenticateWithStrongBiometrics();
+    const result = await authenticateWithBiometrics();
 
     if (result.status === 'authenticated') {
       resetPinProtection();
@@ -263,6 +292,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       confirmEnrollment,
       disableBiometrics,
       enableBiometrics,
+      isAuthReady,
       isAuthenticated,
       isBiometricEnabled,
       isPinConfigured,
@@ -279,6 +309,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       confirmEnrollment,
       disableBiometrics,
       enableBiometrics,
+      isAuthReady,
       isAuthenticated,
       isBiometricEnabled,
       isPinConfigured,

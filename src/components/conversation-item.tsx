@@ -50,7 +50,7 @@ export function ConversationItem({
       onPress={() => onPress?.(conversation)}
       style={({ pressed }) => [
         styles.container,
-        { borderBottomColor: theme.backgroundElement },
+        { backgroundColor: theme.background, borderColor: theme.backgroundElement },
         pressed && styles.pressed,
         style,
       ]}>
@@ -90,12 +90,20 @@ export function ConversationItem({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 1,
     flexDirection: 'row',
     gap: 12,
-    minHeight: 76,
+    marginBottom: 10,
+    marginHorizontal: 16,
+    minHeight: 82,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    shadowColor: '#000000',
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
   },
   pressed: {
     opacity: 0.7,

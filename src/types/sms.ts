@@ -25,6 +25,7 @@ export type Message = {
   direction: MessageDirection;
   status: MessageStatus;
   sentAt: string;
+  integrityStatus?: 'valid' | 'invalid';
 };
 
 export type Conversation = {

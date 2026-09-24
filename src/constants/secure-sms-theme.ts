@@ -15,6 +15,7 @@ export const SecureSmsColors = {
     sentBubbleText: '#FFFFFF',
     receivedBubble: '#EEF1F8',
     success: '#167A46',
+    danger: '#B42318',
     nav: '#FFFFFF',
   },
   dark: {
@@ -31,6 +32,7 @@ export const SecureSmsColors = {
     sentBubbleText: '#11162A',
     receivedBubble: '#252C46',
     success: '#66D59B',
+    danger: '#FF8A80',
     nav: '#151A2D',
   },
 } as const;

@@ -29,7 +29,7 @@ export default function ChatScreen() {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={[styles.screen, styles.centered, { backgroundColor: palette.background }]}>
         <Text style={[styles.unavailableTitle, { color: palette.text }]}>Conversation indisponible</Text>
-        <Text style={[styles.unavailableText, { color: palette.textMuted }]}>Cette conversation fictive n’existe pas.</Text>
+        <Text style={[styles.unavailableText, { color: palette.textMuted }]}>Cette conversation n’est plus disponible.</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => router.replace('/')}
@@ -68,21 +68,17 @@ export default function ChatScreen() {
         <View style={[styles.dayPill, { backgroundColor: palette.primarySoft }]}>
           <Text style={[styles.dayLabel, { color: palette.textMuted }]}>{formatConversationDay(messages[0]?.sentAt ?? conversation.lastMessageAt)}</Text>
         </View>
-        <View style={[styles.demoNote, { backgroundColor: palette.surfaceMuted, borderColor: palette.border }]}>
-          <Text style={[styles.demoNoteText, { color: palette.textMuted }]}>Conversation de démonstration — aucun SMS réel n’est envoyé.</Text>
-        </View>
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
       </ScrollView>
 
       <View style={[styles.footer, { backgroundColor: palette.surface, borderTopColor: palette.border }]}>
-        <Text style={[styles.footerHint, { color: palette.textMuted }]}>Envoyez un message fictif depuis l’écran de composition.</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push('/compose')}
           style={({ pressed }) => [styles.composeButton, { backgroundColor: palette.primary }, pressed && styles.pressed]}>
-          <Text style={styles.composeButtonLabel}>Nouveau message</Text>
+          <Text style={styles.composeButtonLabel}>Écrire un message</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -178,35 +174,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  demoNote: {
-    alignSelf: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 14,
-    marginHorizontal: 16,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-  },
-  demoNoteText: {
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: 'center',
-  },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
     paddingTop: 10,
-  },
-  footerHint: {
-    fontSize: 11,
-    textAlign: 'center',
   },
   composeButton: {
     alignItems: 'center',
     borderRadius: 14,
     justifyContent: 'center',
     marginBottom: 8,
-    marginTop: 8,
+    marginTop: 0,
     minHeight: 48,
   },
   composeButtonLabel: {

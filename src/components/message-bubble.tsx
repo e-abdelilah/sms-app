@@ -50,6 +50,13 @@ export function MessageBubble({ message, style }: MessageBubbleProps) {
         </Text>
         <View style={styles.metadata}>
           <Text style={[styles.time, { color: metadataColor }]}>{formatTime(message.sentAt)}</Text>
+          {message.integrityStatus ? (
+            <Text
+              accessibilityLabel={message.integrityStatus === 'valid' ? 'Intégrité HMAC valide' : 'Intégrité HMAC invalide'}
+              style={[styles.integrity, { color: metadataColor }]}>
+              {message.integrityStatus === 'valid' ? 'HMAC ✓' : 'HMAC !'}
+            </Text>
+          ) : null}
           {isOutgoing ? (
             <Text accessibilityLabel={deliveryLabel(message.status)} style={[styles.status, { color: metadataColor }]}>
               {message.status === 'sent' ? '✓' : '✓✓'}
@@ -93,6 +100,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 4,
     marginTop: 3,
+  },
+  integrity: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   time: {
     fontSize: 11,

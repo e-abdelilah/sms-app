@@ -10,7 +10,11 @@ import { MockSmsProvider } from '@/context/mock-sms-context';
 void SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
-  const { isAuthenticated, recordUserActivity } = useAuth();
+  const { isAuthenticated, isAuthReady, recordUserActivity } = useAuth();
+
+  if (!isAuthReady) {
+    return <View style={styles.navigationRoot} />;
+  }
 
   return (
     <View onTouchStart={recordUserActivity} style={styles.navigationRoot}>

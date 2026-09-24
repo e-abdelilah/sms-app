@@ -35,7 +35,7 @@ export default function ConversationsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.brand, { color: palette.text }]}>SecureSMS</Text>
-          <Text style={[styles.subtitle, { color: palette.textMuted }]}>Vos conversations</Text>
+          <Text style={[styles.subtitle, { color: palette.textMuted }]}>Messagerie privée</Text>
         </View>
         <Pressable
           accessibilityLabel="Ouvrir les réglages"
@@ -47,13 +47,8 @@ export default function ConversationsScreen() {
             { backgroundColor: palette.primarySoft },
             pressed && styles.pressed,
           ]}>
-          <Text style={[styles.headerActionText, { color: palette.primary }]}>•••</Text>
+          <Text style={[styles.headerActionText, { color: palette.primary }]}>⚙</Text>
         </Pressable>
-      </View>
-
-      <View style={[styles.localOnlyNote, { backgroundColor: palette.primarySoft }]}> 
-        <View style={[styles.noteDot, { backgroundColor: palette.primary }]} />
-        <Text style={[styles.noteText, { color: palette.text }]}>Données fictives · Aucun SMS réel n’est envoyé</Text>
       </View>
 
       <FlatList
@@ -61,12 +56,15 @@ export default function ConversationsScreen() {
         data={rows}
         keyExtractor={(item) => item.conversation.id}
         ListHeaderComponent={
-          <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>CONVERSATIONS RÉCENTES</Text>
+          <View style={styles.listHeading}>
+            <Text style={[styles.sectionTitle, { color: palette.text }]}>Messages</Text>
+            <Text style={[styles.conversationCount, { color: palette.textMuted }]}>{rows.length} conversations</Text>
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: palette.text }]}>Aucune conversation</Text>
-            <Text style={[styles.emptyBody, { color: palette.textMuted }]}>Créez un message fictif pour commencer.</Text>
+            <Text style={[styles.emptyBody, { color: palette.textMuted }]}>Écrivez un message pour commencer.</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -137,36 +135,25 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.72,
   },
-  localOnlyNote: {
-    alignItems: 'center',
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 20,
-    marginTop: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  noteDot: {
-    borderRadius: 4,
-    height: 8,
-    width: 8,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-  },
   listContent: {
     paddingBottom: 108,
-    paddingTop: 20,
+    paddingTop: 24,
+  },
+  listHeading: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    paddingHorizontal: 20,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 20,
     fontWeight: '800',
-    letterSpacing: 1.1,
-    paddingBottom: 7,
-    paddingHorizontal: 20,
+    letterSpacing: -0.4,
+  },
+  conversationCount: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',

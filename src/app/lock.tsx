@@ -222,7 +222,7 @@ export default function LockScreen() {
         return;
       case 'not-enrolled':
         setFeedback({
-          text: 'Aucune biométrie forte n’est enregistrée. Utilisez votre PIN.',
+          text: 'Aucune biométrie n’est enregistrée sur cet appareil.',
           tone: 'error',
         });
         return;
@@ -303,12 +303,6 @@ export default function LockScreen() {
             </Text>
           </Pressable>
         ) : null}
-        <View style={[styles.notice, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[styles.noticeText, { color: palette.textMuted }]}>
-            Le PIN, l’activation biométrique et le compteur restent en mémoire pour cette phase ; ils sont
-            effacés à la fermeture de l’application.
-          </Text>
-        </View>
       </View>
       </ScrollView>
     </SafeAreaView>

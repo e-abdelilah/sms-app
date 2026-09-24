@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,6 +18,8 @@ import {
   SESSION_INACTIVITY_TIMEOUT_MS,
   SESSION_MAX_DURATION_MS,
 } from '@/security/session-policy';
+import { detectRootStatus, type RootDetectionStatus } from '@/security/root-detection-service';
+import { runIntegrityTamperTest } from '@/security/security-self-test';
 
 type SettingRowProps = {
   detail: string;
@@ -45,6 +47,9 @@ export default function SettingsScreen() {
   const [biometricMessage, setBiometricMessage] = useState<string | null>(null);
   const [isBiometricWorking, setIsBiometricWorking] = useState(false);
   const [pendingBiometricAction, setPendingBiometricAction] = useState<'enable' | 'disable' | null>(null);
+  const [rootStatus, setRootStatus] = useState<RootDetectionStatus | 'checking'>('checking');
+  const [integrityMessage, setIntegrityMessage] = useState<string | null>(null);
+  const [isIntegrityTesting, setIsIntegrityTesting] = useState(false);
   const retryDelaySeconds = getDurationInSeconds(PIN_RETRY_DELAY_MS);
   const temporaryLockSeconds = getDurationInSeconds(TEMPORARY_PIN_LOCK_MS);
   const sessionMinutes = getDurationInMinutes(SESSION_MAX_DURATION_MS);
@@ -53,6 +58,43 @@ export default function SettingsScreen() {
   const sessionEndTime = sessionExpiresAt
     ? new Date(sessionExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : 'Verrouillée';
+  const rootStatusLabel =
+    rootStatus === 'checking'
+      ? 'Analyse…'
+      : rootStatus === 'detected'
+        ? 'Risque détecté'
+        : rootStatus === 'not-detected'
+          ? 'Non détecté'
+          : 'Indisponible';
+
+  useEffect(() => {
+    let active = true;
+    void detectRootStatus().then((status) => {
+      if (active) setRootStatus(status);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleIntegrityTest() {
+    if (isIntegrityTesting) return;
+    setIsIntegrityTesting(true);
+    setIntegrityMessage(null);
+
+    try {
+      const wasDetected = await runIntegrityTamperTest();
+      setIntegrityMessage(
+        wasDetected
+          ? 'Altération détectée : le contenu modifié a été refusé.'
+          : 'Le test d’intégrité a échoué.',
+      );
+    } catch {
+      setIntegrityMessage('Test indisponible sur cet environnement.');
+    } finally {
+      setIsIntegrityTesting(false);
+    }
+  }
 
   function handleBiometricPress() {
     setBiometricMessage(null);
@@ -67,7 +109,7 @@ export default function SettingsScreen() {
 
     if (action === 'disable') {
       disableBiometrics();
-      setBiometricMessage('Biométrie désactivée pour cette session.');
+      setBiometricMessage('Biométrie désactivée.');
       return;
     }
 
@@ -77,7 +119,7 @@ export default function SettingsScreen() {
 
     switch (result.status) {
       case 'authenticated':
-        setBiometricMessage('Biométrie forte activée pour cette session.');
+        setBiometricMessage('Biométrie activée pour le déverrouillage.');
         return;
       case 'cancelled':
         setBiometricMessage('Activation biométrique annulée.');
@@ -86,10 +128,10 @@ export default function SettingsScreen() {
         setBiometricMessage('Biométrie temporairement verrouillée par Android.');
         return;
       case 'not-enrolled':
-        setBiometricMessage('Enregistrez d’abord une biométrie forte dans Android.');
+        setBiometricMessage('Enregistrez d’abord une empreinte ou un visage dans Android.');
         return;
       case 'unavailable':
-        setBiometricMessage('Biométrie forte indisponible sur cet appareil.');
+        setBiometricMessage('Biométrie indisponible sur cet appareil.');
         return;
       default:
         setBiometricMessage('Échec de l’authentification biométrique.');
@@ -101,19 +143,13 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heading}>
           <Text style={[styles.title, { color: palette.text }]}>Réglages</Text>
-          <Text style={[styles.intro, { color: palette.textMuted }]}>Prototype universitaire hors ligne</Text>
+          <Text style={[styles.intro, { color: palette.textMuted }]}>Sécurité et confidentialité</Text>
         </View>
 
         <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>APPLICATION</Text>
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <SettingRow detail="Application SMS pédagogique" label="SecureSMS" value="1.0" />
+          <SettingRow detail="Messagerie locale sécurisée" label="SecureSMS" value="1.0" />
           <SettingRow detail="Android est la plateforme cible" label="Plateforme" value="Android" />
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>DONNÉES</Text>
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <SettingRow detail="Contacts et conversations de démonstration" label="Contenu" value="Local" />
-          <SettingRow detail="Aucun serveur, API distante ou envoi de SMS" label="Communication" value="Désactivée" />
         </View>
 
         <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>SÉCURITÉ</Text>
@@ -122,7 +158,6 @@ export default function SettingsScreen() {
           <Text style={[styles.securityText, { color: palette.textMuted }]}>
             Après chaque PIN incorrect, un délai de {retryDelaySeconds} seconde est appliqué. Au{' '}
             {MAX_PIN_FAILED_ATTEMPTS}e échec, l’accès est verrouillé pendant {temporaryLockSeconds} secondes.
-            Le compteur reste en mémoire pour cette phase.
           </Text>
           <Pressable
             accessibilityLabel="Verrouiller l’application"
@@ -144,10 +179,10 @@ export default function SettingsScreen() {
           <Text style={[styles.sessionStatus, { color: palette.primary }]}>Expiration prévue : {sessionEndTime}</Text>
         </View>
         <View style={[styles.biometricCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[styles.securityTitle, { color: palette.text }]}>Biométrie Android forte</Text>
+          <Text style={[styles.securityTitle, { color: palette.text }]}>Biométrie Android</Text>
           <Text style={[styles.securityText, { color: palette.textMuted }]}>
             {isBiometricEnabled
-              ? 'Activée comme méthode de déverrouillage pour cette session.'
+              ? 'Activée comme méthode de déverrouillage.'
               : 'Désactivée. Activez-la après avoir confirmé votre identité.'}
           </Text>
           {biometricMessage ? (
@@ -176,11 +211,43 @@ export default function SettingsScreen() {
             </Text>
           </Pressable>
         </View>
-        <View style={[styles.pendingCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[styles.pendingTitle, { color: palette.text }]}>Protections à venir</Text>
+        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>CENTRE DE SÉCURITÉ</Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <SettingRow detail="Requêtes SQLite avec paramètres liés" label="Anti SQL Injection" value="Actif" />
+          <SettingRow detail="Clés secrètes hors du code source" label="Android Keystore" value="Actif" />
+          <SettingRow detail="AES-256-GCM avant écriture SQLite" label="Chiffrement" value="Actif" />
+          <SettingRow detail="HMAC-SHA-256 vérifié avant déchiffrement" label="Intégrité" value="Actif" />
+          <SettingRow detail="Valeurs sensibles masquées, aucun log en production" label="Logs sensibles" value="Désactivés" />
+          <SettingRow detail="SMS, contacts et journaux d’appels bloqués" label="Permissions" value="Minimales" />
+          <SettingRow detail="Sauvegarde Android désactivée" label="Backups" value="Protégés" />
+          <SettingRow detail="Contrôle expérimental, contournable" label="Root" value={rootStatusLabel} />
+          <SettingRow detail="R8, shrink resources et HTTP clair désactivé" label="Hardening" value="Release" />
+          <SettingRow detail="Profils EAS preview et production configurés" label="Signature APK" value="À générer" />
+        </View>
+
+        <View style={[styles.pendingCard, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}>
+          <Text style={[styles.pendingTitle, { color: palette.text }]}>Test d’intégrité pédagogique</Text>
           <Text style={[styles.pendingText, { color: palette.textMuted }]}>
-            Chiffrement, stockage sécurisé et contrôles d’intégrité seront ajoutés dans leurs phases dédiées.
+            Le test chiffre un message, modifie son ciphertext puis vérifie que le HMAC bloque la lecture.
           </Text>
+          {integrityMessage ? (
+            <Text accessibilityLiveRegion="polite" style={[styles.biometricMessage, { color: palette.textMuted }]}>
+              {integrityMessage}
+            </Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            disabled={isIntegrityTesting}
+            onPress={() => void handleIntegrityTest()}
+            style={({ pressed }) => [
+              styles.lockButton,
+              { backgroundColor: pressed ? palette.primaryPressed : palette.primary },
+              isIntegrityTesting && styles.actionDisabled,
+            ]}>
+            <Text style={[styles.lockButtonText, { color: palette.sentBubbleText }]}>
+              {isIntegrityTesting ? 'Test…' : 'Simuler une altération'}
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
       <PinReauthenticationModal

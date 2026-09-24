@@ -9,7 +9,7 @@ export type BiometricAuthenticationResult =
   | { status: 'not-enrolled' }
   | { status: 'unavailable' };
 
-async function getStrongBiometricAvailability() {
+async function getBiometricAvailability() {
   if (Platform.OS !== 'android' && Platform.OS !== 'ios') {
     return 'unavailable' as const;
   }
@@ -18,29 +18,30 @@ async function getStrongBiometricAvailability() {
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     if (!hasHardware) return 'unavailable' as const;
 
-    const enrolledLevel = await LocalAuthentication.getEnrolledLevelAsync();
-    if (enrolledLevel < LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG) {
-      return 'not-enrolled' as const;
-    }
+    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    if (!isEnrolled) return 'not-enrolled' as const;
 
-    return 'available' as const;
+    const enrolledLevel = await LocalAuthentication.getEnrolledLevelAsync();
+    return enrolledLevel >= LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG
+      ? ('strong' as const)
+      : ('weak' as const);
   } catch {
     return 'unavailable' as const;
   }
 }
 
-export async function authenticateWithStrongBiometrics(): Promise<BiometricAuthenticationResult> {
-  const availability = await getStrongBiometricAvailability();
+export async function authenticateWithBiometrics(): Promise<BiometricAuthenticationResult> {
+  const availability = await getBiometricAvailability();
 
   if (availability === 'not-enrolled') return { status: 'not-enrolled' };
   if (availability === 'unavailable') return { status: 'unavailable' };
 
   try {
     const result = await LocalAuthentication.authenticateAsync({
-      biometricsSecurityLevel: 'strong',
+      biometricsSecurityLevel: availability,
       cancelLabel: 'Annuler',
       disableDeviceFallback: true,
-      promptDescription: 'Utilisez une biométrie forte enregistrée sur cet appareil.',
+      promptDescription: 'Utilisez la biométrie enregistrée sur cet appareil.',
       promptMessage: 'Déverrouiller SecureSMS',
       promptSubtitle: 'Confirmez votre identité',
       requireConfirmation: true,

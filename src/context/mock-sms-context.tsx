@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -9,6 +10,13 @@ import {
 } from 'react';
 
 import { mockContacts, mockConversations, mockMessages } from '@/data/mock-sms';
+import {
+  normalizePhoneNumber,
+  validateMessageBody,
+  validatePhoneNumber,
+} from '@/security/input-validation';
+import { logSecurityEvent } from '@/security/secure-logger';
+import { loadSecureMessages, saveSecureMessage } from '@/storage/secure-message-repository';
 import type { Contact, Conversation, Message } from '@/types/sms';
 
 declare const conversationIdBrand: unique symbol;
@@ -22,12 +30,14 @@ export type SendMessageInput =
   | {
       contactId: string;
       body: string;
+      recipientPhoneNumber: string;
       conversationId?: never;
     }
   | {
       conversationId: string;
       body: string;
       contactId?: never;
+      recipientPhoneNumber?: never;
     };
 
 export type MockSmsContextValue = {
@@ -42,7 +52,7 @@ export type MockSmsContextValue = {
    * Adds an outgoing message to the in-memory state and returns the owning
    * conversation ID. A conversation is created when sending to a new contact.
    */
-  sendMessage: (input: SendMessageInput) => ConversationId;
+  sendMessage: (input: SendMessageInput) => Promise<ConversationId>;
 };
 
 const MockSmsContext = createContext<MockSmsContextValue | null>(null);
@@ -63,6 +73,51 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
   ]);
   const [messageState, setMessageState] = useState<Message[]>(() => [...mockMessages]);
   const sequence = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadSecureMessages()
+      .then((storedMessages) => {
+        if (!active) return;
+
+        setMessageState((current) => {
+          const existingIds = new Set(current.map((message) => message.id));
+          return [...current, ...storedMessages.map((entry) => entry.message).filter((message) => !existingIds.has(message.id))];
+        });
+        setConversationState((current) => {
+          const next = [...current];
+
+          for (const { contactId, message } of storedMessages) {
+            const existingIndex = next.findIndex((conversation) => conversation.id === message.conversationId);
+            const existing = next[existingIndex];
+
+            if (existing && message.sentAt > existing.lastMessageAt) {
+              next[existingIndex] = {
+                ...existing,
+                lastMessageAt: message.sentAt,
+                lastMessageId: message.id,
+              };
+            } else if (!existing && mockContacts.some((contact) => contact.id === contactId)) {
+              next.push({
+                contactId,
+                id: message.conversationId,
+                lastMessageAt: message.sentAt,
+                lastMessageId: message.id,
+                unreadCount: 0,
+              });
+            }
+          }
+
+          return next;
+        });
+      })
+      .catch(() => logSecurityEvent('secure-storage-load-failed'));
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const conversations = useMemo(
     () =>
@@ -91,11 +146,9 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
   );
 
   const sendMessage = useCallback(
-    (input: SendMessageInput): ConversationId => {
-      const body = input.body.trim();
-      if (!body) {
-        throw new Error('Le contenu du message ne peut pas être vide.');
-      }
+    async (input: SendMessageInput): Promise<ConversationId> => {
+      const messageValidation = validateMessageBody(input.body);
+      if (!messageValidation.isValid) throw new Error(messageValidation.error);
 
       const existingConversation =
         'conversationId' in input
@@ -112,6 +165,17 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
         throw new Error('Contact introuvable.');
       }
 
+      const recipientPhoneNumber =
+        typeof input.recipientPhoneNumber === 'string'
+          ? input.recipientPhoneNumber
+          : contact.phoneNumber;
+      const phoneValidation = validatePhoneNumber(recipientPhoneNumber);
+      if (!phoneValidation.isValid) throw new Error(phoneValidation.error);
+
+      if (phoneValidation.value !== normalizePhoneNumber(contact.phoneNumber)) {
+        throw new Error('Le numéro ne correspond pas au contact sélectionné.');
+      }
+
       sequence.current += 1;
       const suffix = `${Date.now().toString(36)}-${sequence.current.toString(36)}`;
       const conversationId = (existingConversation?.id ??
@@ -120,12 +184,14 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
         id: `message-local-${suffix}`,
         conversationId,
         senderId: 'self',
-        body,
+        body: messageValidation.value,
         direction: 'outgoing',
+        integrityStatus: 'valid',
         status: 'sent',
         sentAt: new Date().toISOString(),
       };
 
+      await saveSecureMessage(message, contact.id);
       setMessageState((current) => [...current, message]);
       setConversationState((current) => {
         const found = current.find((conversation) => conversation.id === conversationId);
