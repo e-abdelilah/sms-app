@@ -112,7 +112,7 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
           return next;
         });
       })
-      .catch(() => logSecurityEvent('secure-storage-load-failed'));
+      .catch(() => logSecurityEvent('Secure storage load failed'));
 
     return () => {
       active = false;
@@ -192,6 +192,7 @@ export function MockSmsProvider({ children }: PropsWithChildren) {
       };
 
       await saveSecureMessage(message, contact.id);
+      logSecurityEvent('Message processed successfully');
       setMessageState((current) => [...current, message]);
       setConversationState((current) => {
         const found = current.find((conversation) => conversation.id === conversationId);

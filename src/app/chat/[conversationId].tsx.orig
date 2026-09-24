@@ -302,10 +302,15 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     alignItems: 'center',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 16,
     justifyContent: 'center',
-    width: 44,
+    minHeight: 44,
+    paddingHorizontal: 14,
+  },
+  sendButtonLabel: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   feedback: {
     fontSize: 11,

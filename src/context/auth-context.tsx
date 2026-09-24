@@ -22,6 +22,7 @@ import {
   TEMPORARY_PIN_LOCK_MS,
 } from '@/security/pin-attempt-policy';
 import { isValidPin } from '@/security/pin-policy';
+import { logSecurityEvent } from '@/security/secure-logger';
 import { useSessionSecurity } from '@/security/use-session-security';
 
 export type AccountProfile = AuthProfile['account'];
@@ -214,6 +215,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const unlock = useCallback(
     (pin: string): UnlockResult => {
+      logSecurityEvent('Authentication attempt');
       const now = Date.now();
       expirePinProtection(now);
 

@@ -1,5 +1,14 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View, useColorScheme } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+  useColorScheme,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSecureSmsColors } from '@/constants/secure-sms-theme';
@@ -236,9 +245,38 @@ export default function SettingsScreen() {
           <SettingRow detail="Clés protégées par Android Keystore" label="Stockage sécurisé" value="Actif" />
           <SettingRow detail="AES-256-GCM et HMAC-SHA-256" label="Messages protégés" value="Actif" />
           <SettingRow detail="Requêtes SQLite paramétrées" label="Protection SQL" value="Active" />
+          <SettingRow detail="Aucune valeur sensible écrite dans les journaux" label="Sensitive Logging" value="Protected" />
           <SettingRow detail="État de sécurité de l’appareil" label="Root" value={rootStatusLabel} />
           <SettingRow detail="Sauvegardes et trafic HTTP clair désactivés" label="Hardening Android" value="Actif" />
         </View>
+
+        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>LEAST PRIVILEGE</Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <SettingRow detail="Permission absente du manifeste final" label="Camera Access" value="Not requested" />
+          <SettingRow detail="Permissions précise et approximative bloquées" label="Location Access" value="Not requested" />
+          <SettingRow detail="Permission d’enregistrement audio bloquée" label="Microphone Access" value="Not requested" />
+          <SettingRow detail="Seule la permission SMS nécessaire est déclarée" label="Status" value="Protected" />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: palette.textMuted }]}>BACKUP PROTECTION</Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <SettingRow detail="android.allowBackup est défini à false" label="Android Backup" value="Disabled" />
+          <SettingRow detail="Messages, authentification et clés exclus" label="Sensitive Data Backup" value="Blocked" />
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/security-lab')}
+          style={({ pressed }) => [
+            styles.labButton,
+            { backgroundColor: pressed ? palette.primaryPressed : palette.primary },
+          ]}>
+          <View style={styles.labButtonCopy}>
+            <Text style={styles.labButtonTitle}>Ouvrir Security Lab</Text>
+            <Text style={styles.labButtonDetail}>Tests Least Privilege, logs sensibles et backup</Text>
+          </View>
+          <Text style={styles.labButtonArrow}>›</Text>
+        </Pressable>
 
         <View style={[styles.testCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[styles.securityTitle, { color: palette.text }]}>Vérifier l’intégrité</Text>
@@ -341,6 +379,19 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   testCard: { borderRadius: 18, borderWidth: 1, marginHorizontal: 20, marginTop: 12, padding: 17 },
+  labButton: {
+    alignItems: 'center',
+    borderRadius: 18,
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 18,
+    minHeight: 66,
+    paddingHorizontal: 17,
+  },
+  labButtonCopy: { flex: 1 },
+  labButtonTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
+  labButtonDetail: { color: '#E7EAFF', fontSize: 11, marginTop: 4 },
+  labButtonArrow: { color: '#FFFFFF', fontSize: 30, fontWeight: '300' },
   testMessage: { fontSize: 12, lineHeight: 18, marginTop: 10 },
   secondaryButton: {
     alignItems: 'center',

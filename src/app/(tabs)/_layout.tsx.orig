@@ -1,5 +1,4 @@
 import { Tabs } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useColorScheme } from 'react-native';
 
 import { getSecureSmsColors } from '@/constants/secure-sms-theme';
@@ -29,17 +28,6 @@ export default function SmsTabsLayout() {
         options={{
           title: 'Messages',
           tabBarAccessibilityLabel: 'Conversations',
-          tabBarIcon: ({ color, focused, size }) => (
-            <SymbolView
-              name={{
-                android: focused ? 'chat_bubble' : 'chat',
-                ios: focused ? 'message.fill' : 'message',
-                web: focused ? 'chat_bubble' : 'chat',
-              }}
-              size={size}
-              tintColor={color}
-            />
-          ),
         }}
       />
       <Tabs.Screen
@@ -47,13 +35,6 @@ export default function SmsTabsLayout() {
         options={{
           title: 'Réglages',
           tabBarAccessibilityLabel: 'Réglages',
-          tabBarIcon: ({ color, size }) => (
-            <SymbolView
-              name={{ android: 'settings', ios: 'gearshape.fill', web: 'settings' }}
-              size={size}
-              tintColor={color}
-            />
-          ),
         }}
       />
     </Tabs>

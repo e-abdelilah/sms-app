@@ -1,15 +1,13 @@
-const sensitiveFieldPattern = /body|cipher|content|hmac|key|message|phone|pin|secret|token/i;
+export type SecurityEvent =
+  | 'Authentication attempt'
+  | 'Message processed successfully'
+  | 'Secure storage load failed';
 
-function sanitize(metadata: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(metadata).map(([key, value]) => [
-      key,
-      sensitiveFieldPattern.test(key) ? '[REDACTED]' : value,
-    ]),
-  );
-}
-
-export function logSecurityEvent(event: string, metadata: Record<string, unknown> = {}) {
+/**
+ * Logs only predefined event names. Sensitive values and arbitrary metadata
+ * are intentionally unsupported so PINs, messages and keys cannot be passed.
+ */
+export function logSecurityEvent(event: SecurityEvent) {
   if (!__DEV__) return;
-  console.info('[security] ' + event, sanitize(metadata));
+  console.info('[security] ' + event);
 }

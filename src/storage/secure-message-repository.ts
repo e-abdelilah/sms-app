@@ -118,6 +118,28 @@ export async function loadSecureMessages(): Promise<StoredSecureMessage[]> {
   );
 }
 
+/**
+ * Security demonstration: the untrusted value is bound as data, never
+ * concatenated into the SQL command. An injection payload therefore matches
+ * no generated message identifier and returns zero rows.
+ */
+export async function runParameterizedSqlInjectionProbe(untrustedValue: string) {
+  const database = await getDatabase();
+  const statement = await database.prepareAsync(
+    'SELECT COUNT(*) AS match_count FROM secure_messages WHERE id = $untrustedValue',
+  );
+
+  try {
+    const result = await statement.executeAsync<{ match_count: number }>({
+      $untrustedValue: untrustedValue,
+    });
+    const row = await result.getFirstAsync();
+    return row?.match_count ?? 0;
+  } finally {
+    await statement.finalizeAsync();
+  }
+}
+
 export async function tamperLatestSecureMessage() {
   const database = await getDatabase();
   const latest = await database.getFirstAsync<{ id: string; ciphertext: string }>(

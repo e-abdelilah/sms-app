@@ -319,11 +319,6 @@ const styles = StyleSheet.create({
     marginTop: 9,
     maxWidth: 330,
   },
-  descriptionCompact: {
-    fontSize: 14,
-    lineHeight: 19,
-    marginTop: 6,
-  },
   indicatorBlock: {
     alignItems: 'center',
     marginTop: 32,
@@ -360,10 +355,6 @@ const styles = StyleSheet.create({
     minHeight: 50,
     paddingTop: 20,
   },
-  feedbackSlotCompact: {
-    minHeight: 32,
-    paddingTop: 10,
-  },
   feedback: {
     fontSize: 13,
     fontWeight: '700',
@@ -373,13 +364,7 @@ const styles = StyleSheet.create({
   bottomContent: {
     alignItems: 'center',
     gap: 18,
-    marginTop: 4,
     paddingBottom: 8,
     paddingHorizontal: 24,
-  },
-  bottomContentLandscape: {
-    flex: 1,
-    marginTop: 0,
-    paddingVertical: 8,
   },
 });

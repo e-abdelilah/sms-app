@@ -29,6 +29,7 @@ function RootNavigator() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="chat/[conversationId]" />
           <Stack.Screen name="compose" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="security-lab" />
         </Stack.Protected>
       </Stack>
     </View>
